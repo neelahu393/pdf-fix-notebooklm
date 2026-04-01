@@ -25,19 +25,15 @@ jobs:
       - name: Find poppler bin path
         id: poppler
         run: |
-          $candidates = @(
-            "C:\ProgramData\chocolatey\lib\poppler\tools\Library\bin",
-            "C:\ProgramData\chocolatey\lib\poppler\tools\bin",
-            "C:\tools\poppler\Library\bin",
-            "C:\tools\poppler\bin"
-          )
-          $found = $candidates | Where-Object { Test-Path (Join-Path $_ "pdftoppm.exe") } | Select-Object -First 1
+          Write-Host "=== Searching for pdftoppm.exe ==="
+          $found = Get-ChildItem "C:\" -Recurse -Filter "pdftoppm.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $found) {
-            $found = Get-ChildItem "C:\ProgramData\chocolatey\lib\poppler" -Recurse -Filter "pdftoppm.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 | ForEach-Object { $_.DirectoryName }
+            Write-Error "pdftoppm.exe not found anywhere under C:\"
+            exit 1
           }
-          if (-not $found) { Write-Error "pdftoppm.exe not found"; exit 1 }
-          echo "POPPLER_PATH=$found" >> $env:GITHUB_OUTPUT
-          echo "Found poppler at: $found"
+          $binPath = $found.DirectoryName
+          Write-Host "Found at: $binPath"
+          echo "POPPLER_PATH=$binPath" >> $env:GITHUB_OUTPUT
         shell: powershell
 
       - name: Install Python dependencies
