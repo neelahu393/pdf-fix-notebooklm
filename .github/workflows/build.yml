@@ -18,23 +18,14 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install poppler
-        run: choco install poppler -y
-        shell: powershell
-
-      - name: Find poppler bin path
-        id: poppler
+      - name: Install poppler via conda
         run: |
-          Write-Host "=== Searching for pdftoppm.exe ==="
-          $found = Get-ChildItem "C:\" -Recurse -Filter "pdftoppm.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $found) {
-            Write-Error "pdftoppm.exe not found anywhere under C:\"
-            exit 1
-          }
-          $binPath = $found.DirectoryName
-          Write-Host "Found at: $binPath"
+          conda install -c conda-forge poppler -y
+          $binPath = (Get-Command pdftoppm.exe).Source | Split-Path
+          Write-Host "Poppler bin: $binPath"
           echo "POPPLER_PATH=$binPath" >> $env:GITHUB_OUTPUT
         shell: powershell
+        id: poppler
 
       - name: Install Python dependencies
         run: pip install pdf2image pillow pyinstaller tkinterdnd2
