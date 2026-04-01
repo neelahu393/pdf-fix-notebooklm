@@ -32,6 +32,42 @@ jobs:
           echo "POPPLER_PATH=$binPath" >> $env:GITHUB_OUTPUT
         shell: powershell
 
+      - name: Download Noto CJK fonts
+        run: |
+          New-Item -ItemType Directory -Force -Path "fonts"
+          $base = "https://github.com/notofonts/noto-cjk/releases/download/Sans2.004R"
+          Invoke-WebRequest -Uri "$base/NotoSansCJK-Regular.ttc" -OutFile "fonts/NotoSansCJK-Regular.ttc"
+          Invoke-WebRequest -Uri "$base/NotoSansCJK-Bold.ttc"    -OutFile "fonts/NotoSansCJK-Bold.ttc"
+          Write-Host "Fonts downloaded:"
+          Get-ChildItem fonts
+        shell: powershell
+
+      - name: Create fonts.conf
+        run: |
+          $conf = @"
+          <?xml version="1.0"?>
+          <!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+          <fontconfig>
+            <dir>./fonts</dir>
+            <cachedir>./fonts/cache</cachedir>
+            <match target="pattern">
+              <test qual="any" name="family"><string>serif</string></test>
+              <edit name="family" mode="prepend" binding="strong">
+                <string>Noto Sans CJK TC</string>
+              </edit>
+            </match>
+            <match target="pattern">
+              <test qual="any" name="family"><string>sans-serif</string></test>
+              <edit name="family" mode="prepend" binding="strong">
+                <string>Noto Sans CJK TC</string>
+              </edit>
+            </match>
+          </fontconfig>
+          "@
+          $conf | Out-File -FilePath "fonts.conf" -Encoding UTF8
+          Write-Host "fonts.conf created"
+        shell: powershell
+
       - name: Install Python dependencies
         run: pip install pdf2image pillow pyinstaller tkinterdnd2
 
@@ -42,6 +78,8 @@ jobs:
             --windowed `
             --name "pdf_fix_tool" `
             --add-binary "${{ steps.poppler.outputs.POPPLER_PATH }};poppler/Library/bin" `
+            --add-data "fonts;fonts" `
+            --add-data "fonts.conf;." `
             fix_notebooklm_pdf.py
         shell: powershell
 
@@ -58,6 +96,8 @@ jobs:
           name: "Build ${{ github.run_number }}"
           body: |
             ## PDF 繁中破字修復工具
+
+            內建 Noto CJK 字型，修復 poppler Windows 繁體中文渲染問題。
 
             **使用方式**
             - 雙擊開啟視窗 → 拖曳或選擇 PDF → 按「開始修復」
