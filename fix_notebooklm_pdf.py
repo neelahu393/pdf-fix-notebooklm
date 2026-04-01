@@ -94,8 +94,8 @@ def run_gui():
 
     root = RootClass()
     root.title("PDF 繁中破字修復")
-    root.geometry("520x460")
-    root.resizable(False, False)
+    root.geometry("520x540")
+    root.resizable(False, True)
     root.configure(bg="#0f0f0f")
 
     # ── 字型 ──
