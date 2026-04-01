@@ -5,6 +5,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -19,6 +22,7 @@ jobs:
           python-version: "3.11"
 
       - name: Download poppler Windows binary
+        id: poppler
         run: |
           $url = "https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip"
           Invoke-WebRequest -Uri $url -OutFile "poppler.zip"
@@ -27,7 +31,6 @@ jobs:
           Write-Host "Poppler bin: $binPath"
           echo "POPPLER_PATH=$binPath" >> $env:GITHUB_OUTPUT
         shell: powershell
-        id: poppler
 
       - name: Install Python dependencies
         run: pip install pdf2image pillow pyinstaller tkinterdnd2
@@ -37,7 +40,7 @@ jobs:
           pyinstaller `
             --onefile `
             --windowed `
-            --name "PDF修復工具_繁中破字" `
+            --name "pdf_fix_tool" `
             --add-binary "${{ steps.poppler.outputs.POPPLER_PATH }};poppler/Library/bin" `
             fix_notebooklm_pdf.py
         shell: powershell
@@ -45,20 +48,20 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PDF修復工具_Windows
-          path: "dist/PDF修復工具_繁中破字.exe"
+          name: pdf_fix_tool_windows
+          path: dist/pdf_fix_tool.exe
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
-        if: github.ref == 'refs/heads/main'
         with:
           tag_name: build-${{ github.run_number }}
           name: "Build ${{ github.run_number }}"
           body: |
             ## PDF 繁中破字修復工具
+
             **使用方式**
             - 雙擊開啟視窗 → 拖曳或選擇 PDF → 按「開始修復」
             - 或直接將 PDF 拖曳到 .exe 圖示上執行
-          files: "dist/PDF修復工具_繁中破字.exe"
+          files: dist/pdf_fix_tool.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
