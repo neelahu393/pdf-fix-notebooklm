@@ -1,0 +1,68 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install poppler
+        run: choco install poppler -y
+        shell: powershell
+
+      - name: Install Python dependencies
+        run: pip install pdf2image pillow pyinstaller tkinterdnd2
+
+      - name: Find poppler bin path
+        id: poppler
+        run: |
+          $poppler = (Get-Command pdftoppm).Source | Split-Path
+          echo "POPPLER_PATH=$poppler" >> $env:GITHUB_OUTPUT
+          echo "Poppler found at: $poppler"
+        shell: powershell
+
+      - name: Build EXE with PyInstaller
+        run: |
+          pyinstaller `
+            --onefile `
+            --windowed `
+            --name "PDF修復工具_繁中破字" `
+            --add-binary "${{ steps.poppler.outputs.POPPLER_PATH }};poppler/Library/bin" `
+            fix_notebooklm_pdf.py
+        shell: powershell
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PDF修復工具_Windows
+          path: "dist/PDF修復工具_繁中破字.exe"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: "Build ${{ github.run_number }}"
+          body: |
+            ## PDF 繁中破字修復工具
+
+            **使用方式**
+            - 雙擊開啟 → 在視窗內選擇或拖曳 PDF
+            - 或直接將 PDF 拖曳到 .exe 圖示上
+
+            **修復原理**：光柵化每頁為圖片，完全繞過字型問題
+          files: "dist/PDF修復工具_繁中破字.exe"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
