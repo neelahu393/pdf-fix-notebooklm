@@ -18,10 +18,12 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install poppler via conda
+      - name: Download poppler Windows binary
         run: |
-          conda install -c conda-forge poppler -y
-          $binPath = (Get-Command pdftoppm.exe).Source | Split-Path
+          $url = "https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip"
+          Invoke-WebRequest -Uri $url -OutFile "poppler.zip"
+          Expand-Archive -Path "poppler.zip" -DestinationPath "poppler-dist"
+          $binPath = (Get-ChildItem "poppler-dist" -Recurse -Filter "pdftoppm.exe" | Select-Object -First 1).DirectoryName
           Write-Host "Poppler bin: $binPath"
           echo "POPPLER_PATH=$binPath" >> $env:GITHUB_OUTPUT
         shell: powershell
