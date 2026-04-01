@@ -32,38 +32,58 @@ jobs:
           echo "POPPLER_PATH=$binPath" >> $env:GITHUB_OUTPUT
         shell: powershell
 
-      - name: Download Noto CJK fonts
+      - name: Download Noto Sans TC fonts (via pip fontools / direct)
         run: |
           New-Item -ItemType Directory -Force -Path "fonts"
-          $base = "https://github.com/notofonts/noto-cjk/releases/download/Sans2.004R"
-          Invoke-WebRequest -Uri "$base/NotoSansCJK-Regular.ttc" -OutFile "fonts/NotoSansCJK-Regular.ttc"
-          Invoke-WebRequest -Uri "$base/NotoSansCJK-Bold.ttc"    -OutFile "fonts/NotoSansCJK-Bold.ttc"
-          Write-Host "Fonts downloaded:"
+          # 用 pip 安裝 requests，然後從 Google Fonts API 下載
+          pip install requests -q
+          python -c "
+          import requests, os, zipfile, io
+
+          # 從 Google Fonts 下載 Noto Sans TC zip
+          url = 'https://fonts.google.com/download?family=Noto+Sans+TC'
+          print('Downloading Noto Sans TC from Google Fonts...')
+          r = requests.get(url, timeout=60)
+          r.raise_for_status()
+          z = zipfile.ZipFile(io.BytesIO(r.content))
+          # 只抽取 Regular 和 Bold
+          for name in z.namelist():
+              if ('Regular' in name or 'Bold' in name) and name.endswith('.ttf'):
+                  z.extract(name, 'fonts_tmp')
+                  print(f'Extracted: {name}')
+          # 移到 fonts/
+          import shutil
+          for root, dirs, files in os.walk('fonts_tmp'):
+              for f in files:
+                  src = os.path.join(root, f)
+                  dst = os.path.join('fonts', os.path.basename(f))
+                  shutil.copy(src, dst)
+                  print(f'Copied: {dst}')
+          "
           Get-ChildItem fonts
         shell: powershell
 
       - name: Create fonts.conf
         run: |
-          $conf = @"
-          <?xml version="1.0"?>
-          <!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+          $fontsDir = (Resolve-Path "fonts").Path.Replace('\', '/')
+          $conf = "<?xml version='1.0'?>
+          <!DOCTYPE fontconfig SYSTEM 'fonts.dtd'>
           <fontconfig>
             <dir>./fonts</dir>
             <cachedir>./fonts/cache</cachedir>
-            <match target="pattern">
-              <test qual="any" name="family"><string>serif</string></test>
-              <edit name="family" mode="prepend" binding="strong">
-                <string>Noto Sans CJK TC</string>
+            <match target='pattern'>
+              <test qual='any' name='family'><string>sans-serif</string></test>
+              <edit name='family' mode='prepend' binding='strong'>
+                <string>Noto Sans TC</string>
               </edit>
             </match>
-            <match target="pattern">
-              <test qual="any" name="family"><string>sans-serif</string></test>
-              <edit name="family" mode="prepend" binding="strong">
-                <string>Noto Sans CJK TC</string>
+            <match target='pattern'>
+              <test qual='any' name='family'><string>serif</string></test>
+              <edit name='family' mode='prepend' binding='strong'>
+                <string>Noto Sans TC</string>
               </edit>
             </match>
-          </fontconfig>
-          "@
+          </fontconfig>"
           $conf | Out-File -FilePath "fonts.conf" -Encoding UTF8
           Write-Host "fonts.conf created"
         shell: powershell
@@ -97,7 +117,7 @@ jobs:
           body: |
             ## PDF 繁中破字修復工具
 
-            內建 Noto CJK 字型，修復 poppler Windows 繁體中文渲染問題。
+            內建 Noto Sans TC 字型，修復 poppler Windows 繁體中文渲染問題。
 
             **使用方式**
             - 雙擊開啟視窗 → 拖曳或選擇 PDF → 按「開始修復」
