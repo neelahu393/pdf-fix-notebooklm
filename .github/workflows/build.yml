@@ -41,7 +41,7 @@ jobs:
           with urllib.request.urlopen(req) as response:
               with open(os.path.join("fonts", "NotoSansTC-Regular.ttf"), "wb") as f:
                   f.write(response.read())
-          print("✅ TTF Font downloaded successfully.")
+          print("TTF Font downloaded successfully.")
 
           # 2. 下載並提取 Poppler
           print("Downloading Poppler...")
@@ -62,7 +62,7 @@ jobs:
                       d = os.path.join("poppler", "Library", "bin", item)
                       if os.path.isfile(s):
                           shutil.copy2(s, d)
-                  print("✅ Poppler extracted successfully.")
+                  print("Poppler extracted successfully.")
                   break
 
       - name: Install dependencies
