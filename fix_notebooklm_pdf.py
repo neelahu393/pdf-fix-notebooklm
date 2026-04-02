@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 NotebookLM PDF 繁體中文破字修復工具 — GUI 版
-內建 Noto CJK 字型，修復 poppler Windows 繁中渲染問題
+使用 PyMuPDF 引擎，高容錯率解決繁中渲染問題
 """
 
 import sys
@@ -12,134 +12,78 @@ import shutil
 from pathlib import Path
 
 
-def resource_path(relative_path):
-    if hasattr(sys, '_MEIPASS'):
-        return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path)
+def fix_pdf(input_path: str, output_path: str = None, dpi: int = 200,
+            progress_cb=None, log_cb=None) -> str:
+    import fitz  # PyMuPDF
 
+    input_path = Path(input_path)
+    if not input_path.exists():
+        raise FileNotFoundError(f"找不到檔案：{input_path}")
 
-def setup_fontconfig():
-    """每次執行都動態產生 fonts.conf，確保路徑正確"""
-    fonts_dir = resource_path("fonts")
+    if output_path is None:
+        output_path = input_path.parent / f"{input_path.stem}_fixed.pdf"
+    output_path = Path(output_path)
 
-    # 固定寫到 TEMP，每次都重新產生，不依賴打包內的 fonts.conf
-    tmp_conf = os.path.join(os.environ.get('TEMP', os.environ.get('TMPDIR', '/tmp')), 'pdf_fix_fonts.conf')
-    cache_dir = os.path.join(os.environ.get('TEMP', os.environ.get('TMPDIR', '/tmp')), 'pdf_fix_fc_cache')
-    os.makedirs(cache_dir, exist_ok=True)
+    def log(msg):
+        if log_cb:
+            log_cb(msg)
+        else:
+            print(msg)
 
-    conf_content = f"""<?xml version="1.0"?>
-<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
-<fontconfig>
-  <dir>{fonts_dir}</dir>
-  <cachedir>{cache_dir}</cachedir>
-  
-  <!-- 1. 強制攔截常見的中文字型要求，直接替換為 Noto Sans -->
-  <match target="pattern">
-    <test name="family" compare="contains"><string>JhengHei</string></test>
-    <edit name="family" mode="prepend" binding="strong"><string>Noto Sans CJK TC</string></edit>
-  </match>
-  <match target="pattern">
-    <test name="family" compare="contains"><string>MingLiU</string></test>
-    <edit name="family" mode="prepend" binding="strong"><string>Noto Sans CJK TC</string></edit>
-  </match>
-  <match target="pattern">
-    <test name="family" compare="contains"><string>YaHei</string></test>
-    <edit name="family" mode="prepend" binding="strong"><string>Noto Sans CJK TC</string></edit>
-  </match>
+    log(f"📂 輸入：{input_path.name}")
+    log(f"🎯 解析度：{dpi} DPI")
 
-  <!-- 2. 通用字型攔截 -->
-  <match target="pattern">
-    <test qual="any" name="family"><string>serif</string></test>
-    <edit name="family" mode="prepend" binding="strong">
-      <string>Noto Sans CJK TC</string>
-    </edit>
-  </match>
-  <match target="pattern">
-    <test qual="any" name="family"><string>sans-serif</string></test>
-    <edit name="family" mode="prepend" binding="strong">
-      <string>Noto Sans CJK TC</string>
-    </edit>
-  </match>
+    # 判斷是否為網路磁碟機 (UNC) 路徑
+    is_unc = str(input_path).startswith(("\\\\", "//")) or str(output_path).startswith(("\\\\", "//"))
+    
+    with tempfile.TemporaryDirectory() as temp_dir:
+        if is_unc:
+            log("🌐 偵測到網路路徑，移至本機暫存區處理以防卡死...")
+            local_input = Path(temp_dir) / input_path.name
+            local_output = Path(temp_dir) / f"temp_{output_path.name}"
+            shutil.copy2(input_path, local_input)
+            process_input = local_input
+            process_output = local_output
+        else:
+            process_input = input_path
+            process_output = output_path
 
-  <!-- 3. 全局強制兜底：覆蓋 Poppler 的 Windows GDI 預設 -->
-  <match target="pattern">
-    <edit name="family" mode="append" binding="strong">
-      <string>Noto Sans CJK TC</string>
-    </edit>
-  </match>
-</fontconfig>"""
+        log("⏳ 載入 PyMuPDF 渲染引擎...")
+        doc = fitz.open(str(process_input))
+        out_pdf = fitz.open()
 
-        def log(msg):
-            if log_cb:
-                log_cb(msg)
-            else:
-                print(msg)
+        total = len(doc)
+        log(f"📄 共 {total} 頁")
+        if total == 0:
+            raise ValueError("PDF 沒有任何頁面")
 
-        # 設定 fontconfig（讓 poppler 用內建 CJK 字型）
-        setup_fontconfig()
+        for i in range(total):
+            page = doc.load_page(i)
+            # 依指定 DPI 將頁面渲染為圖片
+            pix = page.get_pixmap(dpi=dpi)
+            # 建立與原頁面等比例的新頁面
+            img_page = out_pdf.new_page(width=page.rect.width, height=page.rect.height)
+            # 將圖片資料寫入新頁面
+            img_page.insert_image(page.rect, stream=pix.tobytes("png"))
 
-        log(f"📂 輸入：{input_path.name}")
-        log(f"🎯 解析度：{dpi} DPI")
+            if progress_cb:
+                progress_cb(int((i + 1) / total * 90))
 
-        poppler_path = None
-        candidate = resource_path("poppler/Library/bin")
-        if os.path.exists(candidate):
-            poppler_path = candidate
+        log("💾 儲存處理結果...")
+        out_pdf.save(str(process_output))
+        out_pdf.close()
+        doc.close()
 
-        # 判斷是否為網路磁碟機 (UNC) 路徑
-        is_unc = str(input_path).startswith(("\\\\", "//")) or str(output_path).startswith(("\\\\", "//"))
-        
-        with tempfile.TemporaryDirectory() as temp_dir:
-            if is_unc:
-                log("🌐 偵測到網路磁碟機，移至本機暫存區處理以防卡死...")
-                local_input = Path(temp_dir) / input_path.name
-                local_output = Path(temp_dir) / f"temp_{output_path.name}"
-                shutil.copy2(input_path, local_input)
-                process_input = local_input
-                process_output = local_output
-            else:
-                process_input = input_path
-                process_output = output_path
+        if is_unc:
+            log("📤 寫回網路路徑...")
+            shutil.copy2(process_output, output_path)
 
-            log("⏳ 轉換中，請稍候...")
-            images = convert_from_path(
-                str(process_input),
-                dpi=dpi,
-                fmt="RGB",
-                thread_count=4,
-                poppler_path=poppler_path,
-            )
+    if progress_cb:
+        progress_cb(100)
 
-            total = len(images)
-            log(f"📄 共 {total} 頁")
-            if total == 0:
-                raise ValueError("PDF 沒有任何頁面")
-
-            pages = []
-            for i, img in enumerate(images):
-                pages.append(img.convert("RGB"))
-                if progress_cb:
-                    progress_cb(int((i + 1) / total * 90))
-
-            log("💾 儲存處理結果...")
-            pages[0].save(
-                str(process_output),
-                format="PDF",
-                save_all=True,
-                append_images=pages[1:],
-                resolution=dpi,
-            )
-
-            if is_unc:
-                log("📤 寫回網路磁碟機...")
-                shutil.copy2(process_output, output_path)
-
-        if progress_cb:
-            progress_cb(100)
-
-        size_mb = output_path.stat().st_size / 1024 / 1024
-        log(f"✅ 完成！{output_path.name}（{size_mb:.1f} MB）")
-        return str(output_path)
+    size_mb = output_path.stat().st_size / 1024 / 1024
+    log(f"✅ 完成！{output_path.name}（{size_mb:.1f} MB）")
+    return str(output_path)
 
 
 # ── GUI ────────────────────────────────────────────────────────────────────
@@ -157,7 +101,7 @@ def run_gui():
         HAS_DND = False
 
     root = RootClass()
-    root.title("PDF 繁中破字修復")
+    root.title("PDF 繁中破字修復 (PyMuPDF 版)")
     root.geometry("520x540")
     root.resizable(False, True)
     root.configure(bg="#0f0f0f")
