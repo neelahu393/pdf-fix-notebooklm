@@ -24,9 +24,13 @@ jobs:
       - name: Download Poppler and Font
         shell: pwsh
         run: |
-          # 建立 fonts 資料夾並下載 Noto Sans CJK TC
+          # 建立 fonts 資料夾並從 Google Fonts 下載 Noto Sans TC (TTF 格式，解決鋸齒問題)
           New-Item -ItemType Directory -Force -Path fonts
-          Invoke-WebRequest -Uri "https://github.com/notofonts/noto-cjk/raw/main/Sans/OTF/TraditionalChinese/NotoSansCJKtc-Regular.otf" -OutFile "fonts\NotoSansCJKtc-Regular.otf"
+          Invoke-WebRequest -Uri "https://fonts.google.com/download?family=Noto%20Sans%20TC" -OutFile "noto.zip"
+          Expand-Archive -Path "noto.zip" -DestinationPath "fonts_extracted" -Force
+          # 提取 Regular.ttf
+          $ttfPath = Get-ChildItem -Path "fonts_extracted" -Recurse -Filter "*Regular.ttf" | Select-Object -First 1
+          Copy-Item $ttfPath.FullName -Destination "fonts\NotoSansTC-Regular.ttf"
 
           # 下載並解壓縮 Poppler
           Invoke-WebRequest -Uri "https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip" -OutFile "poppler.zip"
@@ -65,8 +69,8 @@ jobs:
           tag_name: build-${{ github.run_number }}
           name: "Build ${{ github.run_number }}"
           body: |
-            ## PDF 繁中破字修復工具 (強制字型版)
-            重新啟用 Poppler，採用 mode="assign" 暴力覆蓋所有 PDF 未內嵌字型，並保留 UNC 網路路徑防護機制。
+            ## PDF 繁中破字修復工具 (平滑 TTF 版)
+            移除易當機的 Cairo 參數，改用 TTF 格式字型徹底解決 Poppler 渲染的鋸齒與當機問題。
           files: dist/pdf_fix_tool.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
