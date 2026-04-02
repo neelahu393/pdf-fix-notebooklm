@@ -21,10 +21,26 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Download Poppler and Font
+        shell: pwsh
+        run: |
+          # 建立 fonts 資料夾並下載 Noto Sans CJK TC
+          New-Item -ItemType Directory -Force -Path fonts
+          Invoke-WebRequest -Uri "https://github.com/notofonts/noto-cjk/raw/main/Sans/OTF/TraditionalChinese/NotoSansCJKtc-Regular.otf" -OutFile "fonts\NotoSansCJKtc-Regular.otf"
+
+          # 下載並解壓縮 Poppler
+          Invoke-WebRequest -Uri "https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip" -OutFile "poppler.zip"
+          Expand-Archive -Path "poppler.zip" -DestinationPath "poppler_extracted"
+
+          # 找到 pdftoppm.exe 並把整個 bin 目錄放到 poppler/Library/bin
+          $pdfBin = (Get-ChildItem -Path poppler_extracted -Recurse -Filter "pdftoppm.exe" | Select-Object -First 1).DirectoryName
+          New-Item -ItemType Directory -Force -Path "poppler\Library\bin"
+          Copy-Item "$pdfBin\*" -Destination "poppler\Library\bin\" -Recurse
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller PyMuPDF tkinterdnd2
+          pip install pyinstaller pdf2image pillow tkinterdnd2
 
       - name: Build EXE with PyInstaller
         shell: pwsh
@@ -32,14 +48,16 @@ jobs:
           pyinstaller `
             --noconsole `
             --onefile `
-            --name "pdf_fix_tool_pymupdf" `
+            --name "pdf_fix_tool" `
+            --add-data "fonts;fonts" `
+            --add-data "poppler;poppler" `
             fix_notebooklm_pdf.py
 
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
           name: PDF_Fix_Tool_Windows
-          path: dist/pdf_fix_tool_pymupdf.exe
+          path: dist/pdf_fix_tool.exe
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -47,8 +65,8 @@ jobs:
           tag_name: build-${{ github.run_number }}
           name: "Build ${{ github.run_number }}"
           body: |
-            ## PDF 繁中破字修復工具 (PyMuPDF 版)
-            已更換為高容錯率引擎，無需依賴外部字型檔與組件。
-          files: dist/pdf_fix_tool_pymupdf.exe
+            ## PDF 繁中破字修復工具 (強制字型版)
+            重新啟用 Poppler，採用 mode="assign" 暴力覆蓋所有 PDF 未內嵌字型，並保留 UNC 網路路徑防護機制。
+          files: dist/pdf_fix_tool.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
