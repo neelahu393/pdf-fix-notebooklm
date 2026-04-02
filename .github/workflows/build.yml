@@ -72,7 +72,7 @@ jobs:
             ## PDF 繁中破字修復工具
             內建 Noto Sans CJK TC 字型，修復 poppler Windows 繁體中文渲染問題。
 
-            **使用方式**
+            使用方式
             - 雙擊開啟視窗 → 拖曳或選擇 PDF → 按「開始修復」
             - 或直接將 PDF 拖曳到 .exe 圖示上執行
           files: dist/pdf_fix_tool.exe
