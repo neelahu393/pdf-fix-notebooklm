@@ -33,9 +33,15 @@ jobs:
           os.makedirs("fonts", exist_ok=True)
           os.makedirs(os.path.join("poppler", "Library", "bin"), exist_ok=True)
 
+          # 設定偽裝瀏覽器的 Header，避免被 Google API 阻擋回傳 HTML 錯誤頁面
+          headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+
           # 1. 從 Google Fonts 官方下載並提取 TTF 字型
           print("Downloading Noto Sans TC...")
-          urllib.request.urlretrieve("https://fonts.google.com/download?family=Noto%20Sans%20TC", "noto.zip")
+          req_font = urllib.request.Request("https://fonts.google.com/download?family=Noto%20Sans%20TC", headers=headers)
+          with urllib.request.urlopen(req_font) as response:
+              with open("noto.zip", "wb") as f:
+                  f.write(response.read())
           
           with zipfile.ZipFile("noto.zip", "r") as z:
               z.extractall("fonts_extracted")
@@ -49,7 +55,10 @@ jobs:
 
           # 2. 下載並提取 Poppler
           print("Downloading Poppler...")
-          urllib.request.urlretrieve("https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip", "poppler.zip")
+          req_poppler = urllib.request.Request("https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip", headers=headers)
+          with urllib.request.urlopen(req_poppler) as response:
+              with open("poppler.zip", "wb") as f:
+                  f.write(response.read())
           
           with zipfile.ZipFile("poppler.zip", "r") as z:
               z.extractall("poppler_extracted")
