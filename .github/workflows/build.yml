@@ -32,34 +32,35 @@ jobs:
           # 建立目標資料夾
           os.makedirs("fonts", exist_ok=True)
           os.makedirs(os.path.join("poppler", "Library", "bin"), exist_ok=True)
-
-          # 設定偽裝瀏覽器的 Header，避免被 Google API 阻擋回傳 HTML 錯誤頁面
           headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
 
-          # 1. 從 Google Fonts 官方下載並提取 TTF 字型
-          print("Downloading Noto Sans TC...")
-          req_font = urllib.request.Request("https://fonts.google.com/download?family=Noto%20Sans%20TC", headers=headers)
-          with urllib.request.urlopen(req_font) as response:
-              with open("noto.zip", "wb") as f:
-                  f.write(response.read())
-          
-          with zipfile.ZipFile("noto.zip", "r") as z:
-              z.extractall("fonts_extracted")
-              
-          for root, _, files in os.walk("fonts_extracted"):
-              for file in files:
-                  if file.endswith("Regular.ttf"):
-                      shutil.copy(os.path.join(root, file), os.path.join("fonts", "NotoSansTC-Regular.ttf"))
-                      print("✅ Font extracted successfully.")
-                      break
+          # 1. 避開 Google API 阻擋，直接從 CDN 下載 Noto Sans TC TTF 單一檔案
+          print("Downloading Noto Sans TC TTF...")
+          ttf_url = "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanstc/static/NotoSansTC-Regular.ttf"
+          try:
+              req = urllib.request.Request(ttf_url, headers=headers)
+              with urllib.request.urlopen(req) as response:
+                  with open(os.path.join("fonts", "NotoSansTC-Regular.ttf"), "wb") as f:
+                      f.write(response.read())
+              print("✅ TTF Font downloaded successfully from CDN.")
+          except Exception as e:
+              print(f"CDN failed ({e}), trying GitHub raw...")
+              ttf_url_2 = "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstc/static/NotoSansTC-Regular.ttf"
+              req2 = urllib.request.Request(ttf_url_2, headers=headers)
+              with urllib.request.urlopen(req2) as response:
+                  with open(os.path.join("fonts", "NotoSansTC-Regular.ttf"), "wb") as f:
+                      f.write(response.read())
+              print("✅ TTF Font downloaded successfully from GitHub.")
 
           # 2. 下載並提取 Poppler
           print("Downloading Poppler...")
-          req_poppler = urllib.request.Request("https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip", headers=headers)
+          poppler_url = "https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip"
+          req_poppler = urllib.request.Request(poppler_url, headers=headers)
           with urllib.request.urlopen(req_poppler) as response:
               with open("poppler.zip", "wb") as f:
                   f.write(response.read())
           
+          print("Extracting Poppler...")
           with zipfile.ZipFile("poppler.zip", "r") as z:
               z.extractall("poppler_extracted")
               
@@ -102,7 +103,7 @@ jobs:
           name: "Build ${{ github.run_number }}"
           body: |
             ## PDF 繁中破字修復工具 (平滑 TTF 版)
-            改用 Python 穩定提取 TTF 格式字型與 Poppler，徹底解決渲染的鋸齒與執行死結問題。
+            直接下載 TTF 實體字型，避開 Google API 阻擋與 ZIP 解壓縮錯誤。徹底解決渲染的鋸齒與死結問題。
           files: dist/pdf_fix_tool.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
