@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 NotebookLM PDF 繁體中文破字修復工具 — GUI 版
-結合 Poppler、UNC 網路路徑防護與 Fontconfig 強制字型覆蓋
+結合 Poppler、UNC 網路路徑防護與 Fontconfig 強制 TTF 字型覆蓋
 """
 
 import sys
@@ -19,14 +19,14 @@ def resource_path(relative_path):
 
 
 def setup_fontconfig():
-    """動態產生 fonts.conf，使用 mode="assign" 強制覆蓋所有字型"""
+    """動態產生 fonts.conf，使用 mode="assign" 強制覆蓋為 TTF 版本的 Noto Sans TC"""
     fonts_dir = resource_path("fonts")
 
     tmp_conf = os.path.join(os.environ.get('TEMP', os.environ.get('TMPDIR', '/tmp')), 'pdf_fix_fonts.conf')
     cache_dir = os.path.join(os.environ.get('TEMP', os.environ.get('TMPDIR', '/tmp')), 'pdf_fix_fc_cache')
     os.makedirs(cache_dir, exist_ok=True)
 
-    # 關鍵修改：mode="assign" 會無視原本要求，強制替換為 Noto Sans
+    # 關鍵修改：對應 TTF 字型名稱 (Noto Sans TC)
     conf_content = f"""<?xml version="1.0"?>
 <!DOCTYPE fontconfig SYSTEM "fonts.dtd">
 <fontconfig>
@@ -35,7 +35,7 @@ def setup_fontconfig():
   
   <match target="pattern">
     <edit name="family" mode="assign" binding="strong">
-      <string>Noto Sans CJK TC</string>
+      <string>Noto Sans TC</string>
     </edit>
   </match>
 </fontconfig>"""
@@ -96,14 +96,14 @@ def fix_pdf(input_path: str, output_path: str = None, dpi: int = 200,
             process_input = input_path
             process_output = output_path
 
-        log("⏳ 啟動 Cairo 高畫質渲染引擎中，請稍候...")
+        # 移除會當機的 pdftocairo 參數，使用預設引擎搭配 TTF 字型
+        log("⏳ 執行光柵化轉換中，請稍候...")
         images = convert_from_path(
             str(process_input),
             dpi=dpi,
-            fmt="png",
+            fmt="RGB",
             thread_count=4,
             poppler_path=poppler_path,
-            use_pdftocairo=True,
         )
 
         total = len(images)
@@ -153,7 +153,7 @@ def run_gui():
         HAS_DND = False
 
     root = RootClass()
-    root.title("PDF 繁中破字修復 (字型強制覆蓋版)")
+    root.title("PDF 繁中破字修復 (平滑 TTF 版)")
     root.geometry("520x540")
     root.resizable(False, True)
     root.configure(bg="#0f0f0f")
