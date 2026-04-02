@@ -34,23 +34,14 @@ jobs:
           os.makedirs(os.path.join("poppler", "Library", "bin"), exist_ok=True)
           headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
 
-          # 1. 避開 Google API 阻擋，直接從 CDN 下載 Noto Sans TC TTF 單一檔案
-          print("Downloading Noto Sans TC TTF...")
-          ttf_url = "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanstc/static/NotoSansTC-Regular.ttf"
-          try:
-              req = urllib.request.Request(ttf_url, headers=headers)
-              with urllib.request.urlopen(req) as response:
-                  with open(os.path.join("fonts", "NotoSansTC-Regular.ttf"), "wb") as f:
-                      f.write(response.read())
-              print("✅ TTF Font downloaded successfully from CDN.")
-          except Exception as e:
-              print(f"CDN failed ({e}), trying GitHub raw...")
-              ttf_url_2 = "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstc/static/NotoSansTC-Regular.ttf"
-              req2 = urllib.request.Request(ttf_url_2, headers=headers)
-              with urllib.request.urlopen(req2) as response:
-                  with open(os.path.join("fonts", "NotoSansTC-Regular.ttf"), "wb") as f:
-                      f.write(response.read())
-              print("✅ TTF Font downloaded successfully from GitHub.")
+          # 1. 避開 Google API 阻擋，直接從 Google Fonts 官方 GitHub 下載原始 TTF 檔案
+          print("Downloading Noto Sans TC TTF from Google Fonts repo...")
+          ttf_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf"
+          req = urllib.request.Request(ttf_url, headers=headers)
+          with urllib.request.urlopen(req) as response:
+              with open(os.path.join("fonts", "NotoSansTC-Regular.ttf"), "wb") as f:
+                  f.write(response.read())
+          print("✅ TTF Font downloaded successfully.")
 
           # 2. 下載並提取 Poppler
           print("Downloading Poppler...")
@@ -103,7 +94,7 @@ jobs:
           name: "Build ${{ github.run_number }}"
           body: |
             ## PDF 繁中破字修復工具 (平滑 TTF 版)
-            直接下載 TTF 實體字型，避開 Google API 阻擋與 ZIP 解壓縮錯誤。徹底解決渲染的鋸齒與死結問題。
+            直接提取 Google Fonts GitHub 庫中的原始 TTF 檔案，避開 API 阻擋，徹底解決渲染的鋸齒與死結問題。
           files: dist/pdf_fix_tool.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
