@@ -24,13 +24,10 @@ jobs:
       - name: Download Poppler and Font
         shell: pwsh
         run: |
-          # 建立 fonts 資料夾並從 Google Fonts 下載 Noto Sans TC (TTF 格式，解決鋸齒問題)
+          # 建立 fonts 資料夾並直接下載單一 Noto Sans TC Regular TTF 檔案，避免 ZIP 解壓縮失敗
           New-Item -ItemType Directory -Force -Path fonts
-          Invoke-WebRequest -Uri "https://fonts.google.com/download?family=Noto%20Sans%20TC" -OutFile "noto.zip"
-          Expand-Archive -Path "noto.zip" -DestinationPath "fonts_extracted" -Force
-          # 提取 Regular.ttf
-          $ttfPath = Get-ChildItem -Path "fonts_extracted" -Recurse -Filter "*Regular.ttf" | Select-Object -First 1
-          Copy-Item $ttfPath.FullName -Destination "fonts\NotoSansTC-Regular.ttf"
+          Invoke-WebRequest -Uri "https://github.com/notofonts/noto-cjk/raw/main/Sans/TTF/NotoSansTC-Regular.ttf" -OutFile "fonts\NotoSansTC-Regular.ttf"
+          Write-Host "Font downloaded: $(Get-Item fonts\NotoSansTC-Regular.ttf).Length bytes"
 
           # 下載並解壓縮 Poppler
           Invoke-WebRequest -Uri "https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip" -OutFile "poppler.zip"
