@@ -21,22 +21,48 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Download Poppler and Font
-        shell: pwsh
+      - name: Download Poppler and Font via Python
+        shell: python
         run: |
-          # 建立 fonts 資料夾並直接下載單一 Noto Sans TC Regular TTF 檔案，避免 ZIP 解壓縮失敗
-          New-Item -ItemType Directory -Force -Path fonts
-          Invoke-WebRequest -Uri "https://github.com/notofonts/noto-cjk/raw/main/Sans/TTF/NotoSansTC-Regular.ttf" -OutFile "fonts\NotoSansTC-Regular.ttf"
-          Write-Host "Font downloaded: $(Get-Item fonts\NotoSansTC-Regular.ttf).Length bytes"
+          import urllib.request
+          import zipfile
+          import os
+          import shutil
 
-          # 下載並解壓縮 Poppler
-          Invoke-WebRequest -Uri "https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip" -OutFile "poppler.zip"
-          Expand-Archive -Path "poppler.zip" -DestinationPath "poppler_extracted"
+          # 建立目標資料夾
+          os.makedirs("fonts", exist_ok=True)
+          os.makedirs(os.path.join("poppler", "Library", "bin"), exist_ok=True)
 
-          # 找到 pdftoppm.exe 並把整個 bin 目錄放到 poppler/Library/bin
-          $pdfBin = (Get-ChildItem -Path poppler_extracted -Recurse -Filter "pdftoppm.exe" | Select-Object -First 1).DirectoryName
-          New-Item -ItemType Directory -Force -Path "poppler\Library\bin"
-          Copy-Item "$pdfBin\*" -Destination "poppler\Library\bin\" -Recurse
+          # 1. 從 Google Fonts 官方下載並提取 TTF 字型
+          print("Downloading Noto Sans TC...")
+          urllib.request.urlretrieve("https://fonts.google.com/download?family=Noto%20Sans%20TC", "noto.zip")
+          
+          with zipfile.ZipFile("noto.zip", "r") as z:
+              z.extractall("fonts_extracted")
+              
+          for root, _, files in os.walk("fonts_extracted"):
+              for file in files:
+                  if file.endswith("Regular.ttf"):
+                      shutil.copy(os.path.join(root, file), os.path.join("fonts", "NotoSansTC-Regular.ttf"))
+                      print("✅ Font extracted successfully.")
+                      break
+
+          # 2. 下載並提取 Poppler
+          print("Downloading Poppler...")
+          urllib.request.urlretrieve("https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip", "poppler.zip")
+          
+          with zipfile.ZipFile("poppler.zip", "r") as z:
+              z.extractall("poppler_extracted")
+              
+          for root, _, files in os.walk("poppler_extracted"):
+              if "pdftoppm.exe" in files:
+                  for item in os.listdir(root):
+                      s = os.path.join(root, item)
+                      d = os.path.join("poppler", "Library", "bin", item)
+                      if os.path.isfile(s):
+                          shutil.copy2(s, d)
+                  print("✅ Poppler extracted successfully.")
+                  break
 
       - name: Install dependencies
         run: |
@@ -67,7 +93,7 @@ jobs:
           name: "Build ${{ github.run_number }}"
           body: |
             ## PDF 繁中破字修復工具 (平滑 TTF 版)
-            移除易當機的 Cairo 參數，改用 TTF 格式字型徹底解決 Poppler 渲染的鋸齒與當機問題。
+            改用 Python 穩定提取 TTF 格式字型與 Poppler，徹底解決渲染的鋸齒與執行死結問題。
           files: dist/pdf_fix_tool.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
