@@ -7,6 +7,8 @@ NotebookLM PDF 繁體中文破字修復工具 — GUI 版
 import sys
 import os
 import threading
+import tempfile
+import shutil
 from pathlib import Path
 
 
@@ -67,77 +69,77 @@ def setup_fontconfig():
   </match>
 </fontconfig>"""
 
-    with open(tmp_conf, 'w', encoding='utf-8') as f:
-        f.write(conf_content)
+        def log(msg):
+            if log_cb:
+                log_cb(msg)
+            else:
+                print(msg)
 
-    os.environ['FONTCONFIG_FILE'] = tmp_conf
-    os.environ['FONTCONFIG_PATH'] = os.path.dirname(tmp_conf)
-    return fonts_dir, tmp_conf
+        # 設定 fontconfig（讓 poppler 用內建 CJK 字型）
+        setup_fontconfig()
 
+        log(f"📂 輸入：{input_path.name}")
+        log(f"🎯 解析度：{dpi} DPI")
 
-def fix_pdf(input_path: str, output_path: str = None, dpi: int = 200,
-            progress_cb=None, log_cb=None) -> str:
-    from pdf2image import convert_from_path
+        poppler_path = None
+        candidate = resource_path("poppler/Library/bin")
+        if os.path.exists(candidate):
+            poppler_path = candidate
 
-    input_path = Path(input_path)
-    if not input_path.exists():
-        raise FileNotFoundError(f"找不到檔案：{input_path}")
+        # 判斷是否為網路磁碟機 (UNC) 路徑
+        is_unc = str(input_path).startswith(("\\\\", "//")) or str(output_path).startswith(("\\\\", "//"))
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            if is_unc:
+                log("🌐 偵測到網路磁碟機，移至本機暫存區處理以防卡死...")
+                local_input = Path(temp_dir) / input_path.name
+                local_output = Path(temp_dir) / f"temp_{output_path.name}"
+                shutil.copy2(input_path, local_input)
+                process_input = local_input
+                process_output = local_output
+            else:
+                process_input = input_path
+                process_output = output_path
 
-    if output_path is None:
-        output_path = input_path.parent / f"{input_path.stem}_fixed.pdf"
-    output_path = Path(output_path)
+            log("⏳ 轉換中，請稍候...")
+            images = convert_from_path(
+                str(process_input),
+                dpi=dpi,
+                fmt="RGB",
+                thread_count=4,
+                poppler_path=poppler_path,
+            )
 
-    def log(msg):
-        if log_cb:
-            log_cb(msg)
-        else:
-            print(msg)
+            total = len(images)
+            log(f"📄 共 {total} 頁")
+            if total == 0:
+                raise ValueError("PDF 沒有任何頁面")
 
-    # 設定 fontconfig（讓 poppler 用內建 CJK 字型）
-    setup_fontconfig()
+            pages = []
+            for i, img in enumerate(images):
+                pages.append(img.convert("RGB"))
+                if progress_cb:
+                    progress_cb(int((i + 1) / total * 90))
 
-    log(f"📂 輸入：{input_path.name}")
-    log(f"🎯 解析度：{dpi} DPI")
-    log("⏳ 轉換中，請稍候...")
+            log("💾 儲存處理結果...")
+            pages[0].save(
+                str(process_output),
+                format="PDF",
+                save_all=True,
+                append_images=pages[1:],
+                resolution=dpi,
+            )
 
-    poppler_path = None
-    candidate = resource_path("poppler/Library/bin")
-    if os.path.exists(candidate):
-        poppler_path = candidate
+            if is_unc:
+                log("📤 寫回網路磁碟機...")
+                shutil.copy2(process_output, output_path)
 
-    images = convert_from_path(
-        str(input_path),
-        dpi=dpi,
-        fmt="RGB",
-        thread_count=4,
-        poppler_path=poppler_path,
-    )
-
-    total = len(images)
-    log(f"📄 共 {total} 頁")
-    if total == 0:
-        raise ValueError("PDF 沒有任何頁面")
-
-    pages = []
-    for i, img in enumerate(images):
-        pages.append(img.convert("RGB"))
         if progress_cb:
-            progress_cb(int((i + 1) / total * 90))
+            progress_cb(100)
 
-    pages[0].save(
-        str(output_path),
-        format="PDF",
-        save_all=True,
-        append_images=pages[1:],
-        resolution=dpi,
-    )
-
-    if progress_cb:
-        progress_cb(100)
-
-    size_mb = output_path.stat().st_size / 1024 / 1024
-    log(f"✅ 完成！{output_path.name}（{size_mb:.1f} MB）")
-    return str(output_path)
+        size_mb = output_path.stat().st_size / 1024 / 1024
+        log(f"✅ 完成！{output_path.name}（{size_mb:.1f} MB）")
+        return str(output_path)
 
 
 # ── GUI ────────────────────────────────────────────────────────────────────
