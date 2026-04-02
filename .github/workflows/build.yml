@@ -2,70 +2,48 @@ name: Build Windows EXE
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
 
-      - name: Download poppler Windows binary
-        id: poppler
-        run: |
-          $url = "https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip"
-          Invoke-WebRequest -Uri $url -OutFile "poppler.zip"
-          Expand-Archive -Path "poppler.zip" -DestinationPath "poppler-dist"
-          $binPath = (Get-ChildItem "poppler-dist" -Recurse -Filter "pdftoppm.exe" | Select-Object -First 1).DirectoryName
-          Write-Host "Poppler bin: $binPath"
-          echo "POPPLER_PATH=$binPath" >> $env:GITHUB_OUTPUT
-        shell: powershell
+    - name: Download Poppler and Font
+      shell: pwsh
+      run: |
+        # 1. 建立 fonts 資料夾並自動下載 Google Noto Sans CJK TC (OTF 格式)
+        New-Item -ItemType Directory -Force -Path fonts
+        Invoke-WebRequest -Uri "https://github.com/notofonts/noto-cjk/raw/main/Sans/OTF/TraditionalChinese/NotoSansCJKtc-Regular.otf" -OutFile "fonts\NotoSansCJKtc-Regular.otf"
 
-      - name: Install Python dependencies
-        run: pip install pdf2image pillow pyinstaller tkinterdnd2
+        # 2. 自動下載 Poppler Windows 版並解壓縮
+        Invoke-WebRequest -Uri "https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip" -OutFile "poppler.zip"
+        Expand-Archive -Path "poppler.zip" -DestinationPath "poppler_extracted"
+        
+        # 3. 將解壓縮後的資料夾重新命名為 poppler，以符合 Python 程式碼中的路徑
+        $extractedFolder = Get-ChildItem -Path poppler_extracted -Directory | Select-Object -First 1
+        Move-Item -Path $extractedFolder.FullName -Destination ".\poppler"
 
-      - name: Build EXE with PyInstaller
-        run: |
-          pyinstaller `
-            --onefile `
-            --windowed `
-            --name "pdf_fix_tool" `
-            --add-binary "${{ steps.poppler.outputs.POPPLER_PATH }};poppler/Library/bin" `
-            --add-data "fonts;fonts" `
-            --add-data "fonts.conf;." `
-            fix_notebooklm_pdf.py
-        shell: powershell
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller pdf2image tkinterdnd2
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: pdf_fix_tool_windows
-          path: dist/pdf_fix_tool.exe
+    - name: Build EXE with PyInstaller
+      run: |
+        pyinstaller --noconsole --onefile --add-data "fonts;fonts" --add-data "poppler;poppler" fix_notebooklm_pdf.py
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: build-${{ github.run_number }}
-          name: "Build ${{ github.run_number }}"
-          body: |
-            ## PDF 繁中破字修復工具
-
-            內建 Noto Sans CJK 字型，修復 poppler Windows 繁體中文渲染問題。
-
-            **使用方式**
-            - 雙擊開啟視窗 → 拖曳或選擇 PDF → 按「開始修復」
-            - 或直接將 PDF 拖曳到 .exe 圖示上執行
-          files: dist/pdf_fix_tool.exe
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Upload EXE artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: PDF_Fix_Tool_Windows
+        path: dist/fix_notebooklm_pdf.exe
