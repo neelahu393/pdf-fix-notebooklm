@@ -96,13 +96,14 @@ def fix_pdf(input_path: str, output_path: str = None, dpi: int = 200,
             process_input = input_path
             process_output = output_path
 
-        log("⏳ 執行光柵化轉換中，請稍候...")
+        log("⏳ 啟動 Cairo 高畫質渲染引擎中，請稍候...")
         images = convert_from_path(
             str(process_input),
             dpi=dpi,
-            fmt="RGB",
+            fmt="png",
             thread_count=4,
             poppler_path=poppler_path,
+            use_pdftocairo=True,
         )
 
         total = len(images)
