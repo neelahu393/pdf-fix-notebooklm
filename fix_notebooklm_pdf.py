@@ -17,21 +17,39 @@ def resource_path(relative_path):
 
 
 def setup_fontconfig():
-    """設定 fontconfig 讓 poppler 找到內建 CJK 字型"""
+    """每次執行都動態產生 fonts.conf，確保路徑正確"""
     fonts_dir = resource_path("fonts")
-    conf_path = resource_path("fonts.conf")
 
-    # 若 fonts.conf 不存在（非打包環境），動態產生
-    if not os.path.exists(conf_path):
-        conf_content = f"""<?xml version="1.0"?>
+    # 固定寫到 TEMP，每次都重新產生，不依賴打包內的 fonts.conf
+    tmp_conf = os.path.join(os.environ.get('TEMP', os.environ.get('TMPDIR', '/tmp')), 'pdf_fix_fonts.conf')
+    cache_dir = os.path.join(os.environ.get('TEMP', os.environ.get('TMPDIR', '/tmp')), 'pdf_fix_fc_cache')
+    os.makedirs(cache_dir, exist_ok=True)
+
+    conf_content = f"""<?xml version="1.0"?>
 <!DOCTYPE fontconfig SYSTEM "fonts.dtd">
 <fontconfig>
   <dir>{fonts_dir}</dir>
-  <cachedir>{os.path.join(fonts_dir, 'cache')}</cachedir>
+  <cachedir>{cache_dir}</cachedir>
+  
+  <!-- 1. 強制攔截常見的中文字型要求，直接替換為 Noto Sans -->
+  <match target="pattern">
+    <test name="family" compare="contains"><string>JhengHei</string></test>
+    <edit name="family" mode="prepend" binding="strong"><string>Noto Sans CJK TC</string></edit>
+  </match>
+  <match target="pattern">
+    <test name="family" compare="contains"><string>MingLiU</string></test>
+    <edit name="family" mode="prepend" binding="strong"><string>Noto Sans CJK TC</string></edit>
+  </match>
+  <match target="pattern">
+    <test name="family" compare="contains"><string>YaHei</string></test>
+    <edit name="family" mode="prepend" binding="strong"><string>Noto Sans CJK TC</string></edit>
+  </match>
+
+  <!-- 2. 通用字型攔截 -->
   <match target="pattern">
     <test qual="any" name="family"><string>serif</string></test>
     <edit name="family" mode="prepend" binding="strong">
-      <string>Noto Serif CJK TC</string>
+      <string>Noto Sans CJK TC</string>
     </edit>
   </match>
   <match target="pattern">
@@ -40,14 +58,21 @@ def setup_fontconfig():
       <string>Noto Sans CJK TC</string>
     </edit>
   </match>
-</fontconfig>"""
-        tmp_conf = os.path.join(os.environ.get('TEMP', '/tmp'), 'pdf_fix_fonts.conf')
-        with open(tmp_conf, 'w', encoding='utf-8') as f:
-            f.write(conf_content.replace('{fonts_dir}', fonts_dir))
-        conf_path = tmp_conf
 
-    os.environ['FONTCONFIG_FILE'] = conf_path
-    os.environ['FONTCONFIG_PATH'] = os.path.dirname(conf_path)
+  <!-- 3. 全局強制兜底：覆蓋 Poppler 的 Windows GDI 預設 -->
+  <match target="pattern">
+    <edit name="family" mode="append" binding="strong">
+      <string>Noto Sans CJK TC</string>
+    </edit>
+  </match>
+</fontconfig>"""
+
+    with open(tmp_conf, 'w', encoding='utf-8') as f:
+        f.write(conf_content)
+
+    os.environ['FONTCONFIG_FILE'] = tmp_conf
+    os.environ['FONTCONFIG_PATH'] = os.path.dirname(tmp_conf)
+    return fonts_dir, tmp_conf
 
 
 def fix_pdf(input_path: str, output_path: str = None, dpi: int = 200,
