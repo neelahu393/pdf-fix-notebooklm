@@ -21,54 +21,10 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Download Poppler and Font via Python
-        shell: python
-        run: |
-          import urllib.request
-          import zipfile
-          import os
-          import shutil
-
-          # 建立目標資料夾
-          os.makedirs("fonts", exist_ok=True)
-          os.makedirs(os.path.join("poppler", "Library", "bin"), exist_ok=True)
-          headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-
-          # 1. 避開 Google API 阻擋，直接從 Google Fonts 官方 GitHub 下載原始 TTF 檔案
-          print("Downloading Noto Sans TC TTF from Google Fonts repo...")
-          ttf_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf"
-          req = urllib.request.Request(ttf_url, headers=headers)
-          with urllib.request.urlopen(req) as response:
-              with open(os.path.join("fonts", "NotoSansTC-Regular.ttf"), "wb") as f:
-                  f.write(response.read())
-          print("TTF Font downloaded successfully.")
-
-          # 2. 下載並提取 Poppler
-          print("Downloading Poppler...")
-          poppler_url = "https://github.com/oschwartz10612/poppler-windows/releases/download/v24.08.0-0/Release-24.08.0-0.zip"
-          req_poppler = urllib.request.Request(poppler_url, headers=headers)
-          with urllib.request.urlopen(req_poppler) as response:
-              with open("poppler.zip", "wb") as f:
-                  f.write(response.read())
-          
-          print("Extracting Poppler...")
-          with zipfile.ZipFile("poppler.zip", "r") as z:
-              z.extractall("poppler_extracted")
-              
-          for root, _, files in os.walk("poppler_extracted"):
-              if "pdftoppm.exe" in files:
-                  for item in os.listdir(root):
-                      s = os.path.join(root, item)
-                      d = os.path.join("poppler", "Library", "bin", item)
-                      if os.path.isfile(s):
-                          shutil.copy2(s, d)
-                  print("Poppler extracted successfully.")
-                  break
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller pdf2image pillow tkinterdnd2
+          pip install pyinstaller pymupdf pillow tkinterdnd2
 
       - name: Build EXE with PyInstaller
         shell: pwsh
@@ -77,8 +33,6 @@ jobs:
             --noconsole `
             --onefile `
             --name "pdf_fix_tool" `
-            --add-data "fonts;fonts" `
-            --add-data "poppler;poppler" `
             fix_notebooklm_pdf.py
 
       - name: Upload EXE artifact
@@ -93,8 +47,13 @@ jobs:
           tag_name: build-${{ github.run_number }}
           name: "Build ${{ github.run_number }}"
           body: |
-            ## PDF 繁中破字修復工具 (平滑 TTF 版)
-            直接提取 Google Fonts GitHub 庫中的原始 TTF 檔案，避開 API 阻擋，徹底解決渲染的鋸齒與死結問題。
+            ## PDF 繁中破字修復工具
+
+            使用 pymupdf 渲染，內建 CJK 字型支援，不依賴系統字型或 poppler。
+
+            **使用方式**
+            - 雙擊開啟視窗 → 拖曳或選擇 PDF → 按「開始修復」
+            - 或直接將 PDF 拖曳到 .exe 圖示上執行
           files: dist/pdf_fix_tool.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
