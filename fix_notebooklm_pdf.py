@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 NotebookLM PDF 繁體中文破字修復工具 — GUI 版
-結合 Poppler、UNC 網路路徑防護與 Fontconfig 強制 TTF 字型覆蓋
+使用 pymupdf 渲染，內建 CJK 支援，不依賴系統字型
 """
 
 import sys
@@ -18,39 +18,11 @@ def resource_path(relative_path):
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path)
 
 
-def setup_fontconfig():
-    """動態產生 fonts.conf，使用 mode="assign" 強制覆蓋為 TTF 版本的 Noto Sans TC"""
-    fonts_dir = resource_path("fonts")
-
-    tmp_conf = os.path.join(os.environ.get('TEMP', os.environ.get('TMPDIR', '/tmp')), 'pdf_fix_fonts.conf')
-    cache_dir = os.path.join(os.environ.get('TEMP', os.environ.get('TMPDIR', '/tmp')), 'pdf_fix_fc_cache')
-    os.makedirs(cache_dir, exist_ok=True)
-
-    # 關鍵修改：對應 TTF 字型名稱 (Noto Sans TC)
-    conf_content = f"""<?xml version="1.0"?>
-<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
-<fontconfig>
-  <dir>{fonts_dir}</dir>
-  <cachedir>{cache_dir}</cachedir>
-  
-  <match target="pattern">
-    <edit name="family" mode="assign" binding="strong">
-      <string>Noto Sans TC</string>
-    </edit>
-  </match>
-</fontconfig>"""
-
-    with open(tmp_conf, 'w', encoding='utf-8') as f:
-        f.write(conf_content)
-
-    os.environ['FONTCONFIG_FILE'] = tmp_conf
-    os.environ['FONTCONFIG_PATH'] = os.path.dirname(tmp_conf)
-    return fonts_dir, tmp_conf
-
-
 def fix_pdf(input_path: str, output_path: str = None, dpi: int = 200,
             progress_cb=None, log_cb=None) -> str:
-    from pdf2image import convert_from_path
+    import fitz  # pymupdf
+    from PIL import Image
+    import io
 
     input_path = Path(input_path)
     if not input_path.exists():
@@ -66,69 +38,49 @@ def fix_pdf(input_path: str, output_path: str = None, dpi: int = 200,
         else:
             print(msg)
 
-    # 載入強勢覆蓋的字型設定
-    fonts_dir, conf_path = setup_fontconfig()
-    
     log(f"📂 輸入：{input_path.name}")
     log(f"🎯 解析度：{dpi} DPI")
 
-    poppler_path = None
-    for candidate in [
-        resource_path("poppler/Library/bin"),
-        resource_path("poppler"),
-    ]:
-        if os.path.exists(os.path.join(candidate, "pdftoppm.exe")):
-            poppler_path = candidate
-            break
-
-    # 判斷是否為網路磁碟機 (UNC) 路徑，防卡死機制
-    is_unc = str(input_path).startswith(("\\\\", "//")) or str(output_path).startswith(("\\\\", "//"))
+    # UNC 網路路徑防護
+    is_unc = str(input_path).startswith(("\\\\", "//"))
     
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with tempfile.TemporaryDirectory() as tmp:
         if is_unc:
-            log("🌐 偵測到網路路徑，移至本機暫存區處理...")
-            local_input = Path(temp_dir) / input_path.name
-            local_output = Path(temp_dir) / f"temp_{output_path.name}"
+            log("🌐 偵測到網路路徑，複製至本機處理...")
+            local_input = Path(tmp) / input_path.name
             shutil.copy2(input_path, local_input)
             process_input = local_input
-            process_output = local_output
         else:
             process_input = input_path
-            process_output = output_path
 
-        # 移除會當機的 pdftocairo 參數，使用預設引擎搭配 TTF 字型
-        log("⏳ 執行光柵化轉換中，請稍候...")
-        images = convert_from_path(
-            str(process_input),
-            dpi=dpi,
-            fmt="RGB",
-            thread_count=4,
-            poppler_path=poppler_path,
-        )
+        log("⏳ 轉換中，請稍候...")
+        scale = dpi / 72.0
+        mat = fitz.Matrix(scale, scale)
 
-        total = len(images)
+        doc = fitz.open(str(process_input))
+        total = len(doc)
         log(f"📄 共 {total} 頁")
-        if total == 0:
-            raise ValueError("PDF 沒有任何頁面")
 
         pages = []
-        for i, img in enumerate(images):
-            pages.append(img.convert("RGB"))
+        for i, page in enumerate(doc):
+            pix = page.get_pixmap(matrix=mat, alpha=False)
+            img = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
+            pages.append(img)
             if progress_cb:
                 progress_cb(int((i + 1) / total * 90))
+        doc.close()
 
-        log("💾 儲存處理結果...")
+        log("💾 儲存中...")
+        tmp_out = Path(tmp) / "output.pdf"
         pages[0].save(
-            str(process_output),
+            str(tmp_out),
             format="PDF",
             save_all=True,
             append_images=pages[1:],
             resolution=dpi,
         )
 
-        if is_unc:
-            log("📤 寫回網路路徑...")
-            shutil.copy2(process_output, output_path)
+        shutil.copy2(tmp_out, output_path)
 
     if progress_cb:
         progress_cb(100)
@@ -138,7 +90,7 @@ def fix_pdf(input_path: str, output_path: str = None, dpi: int = 200,
     return str(output_path)
 
 
-# ── GUI ────────────────────────────────────────────────────────────────────
+# ── GUI ──────────────────────────────────────────────────────────────────
 
 def run_gui():
     import tkinter as tk
@@ -153,7 +105,7 @@ def run_gui():
         HAS_DND = False
 
     root = RootClass()
-    root.title("PDF 繁中破字修復 (平滑 TTF 版)")
+    root.title("PDF 繁中破字修復")
     root.geometry("520x540")
     root.resizable(False, True)
     root.configure(bg="#0f0f0f")
@@ -187,13 +139,18 @@ def run_gui():
     drop_inner.pack(fill="both", padx=2, pady=2)
     drop_icon = tk.Label(drop_inner, text="⬇", font=("Segoe UI Emoji", 28), bg=SURFACE, fg=ACCENT)
     drop_icon.pack(pady=(18, 4))
-    drop_hint = tk.Label(drop_inner, text="將 PDF 拖曳至此，或點擊選擇檔案", font=FONT_LABEL, bg=SURFACE, fg=MUTED)
+    drop_hint = tk.Label(drop_inner, text="將 PDF 拖曳至此，或點擊選擇檔案",
+                         font=FONT_LABEL, bg=SURFACE, fg=MUTED)
     drop_hint.pack()
-    file_label = tk.Label(drop_inner, textvariable=selected_file, font=FONT_SMALL, bg=SURFACE, fg=ACCENT, wraplength=420, justify="center")
+    file_label = tk.Label(drop_inner, textvariable=selected_file, font=FONT_SMALL,
+                          bg=SURFACE, fg=ACCENT, wraplength=420, justify="center")
     file_label.pack(pady=(4, 14))
 
     def pick_file(*_):
-        path = filedialog.askopenfilename(title="選擇 PDF", filetypes=[("PDF 檔案", "*.pdf"), ("所有檔案", "*.*")])
+        path = filedialog.askopenfilename(
+            title="選擇 PDF",
+            filetypes=[("PDF 檔案", "*.pdf"), ("所有檔案", "*.*")]
+        )
         if path:
             selected_file.set(path)
             drop_hint.config(fg=TEXT)
@@ -223,13 +180,15 @@ def run_gui():
     style.theme_use("default")
     style.configure("Gold.Horizontal.TProgressbar", troughcolor=SURFACE, background=ACCENT,
                     bordercolor=BORDER, lightcolor=ACCENT, darkcolor=ACCENT)
-    progress = ttk.Progressbar(prog_frame, style="Gold.Horizontal.TProgressbar", length=472, mode="determinate")
+    progress = ttk.Progressbar(prog_frame, style="Gold.Horizontal.TProgressbar",
+                                length=472, mode="determinate")
     progress.pack()
 
     log_frame = tk.Frame(root, bg=SURFACE, highlightthickness=1, highlightbackground=BORDER)
     log_frame.pack(fill="both", padx=24, pady=(10,0), ipady=4)
     log_text = tk.Text(log_frame, height=5, bg=SURFACE, fg=TEXT, font=FONT_MONO,
-                       bd=0, relief="flat", state="disabled", wrap="word", insertbackground=ACCENT)
+                       bd=0, relief="flat", state="disabled", wrap="word",
+                       insertbackground=ACCENT)
     log_text.pack(fill="both", padx=8, pady=4)
 
     def log(msg, color=None):
@@ -255,9 +214,12 @@ def run_gui():
 
         def worker():
             try:
-                result = fix_pdf(path, dpi=dpi_var.get(),
-                                 progress_cb=lambda v: root.after(0, set_progress, v),
-                                 log_cb=lambda m: root.after(0, log, m))
+                result = fix_pdf(
+                    path,
+                    dpi=dpi_var.get(),
+                    progress_cb=lambda v: root.after(0, set_progress, v),
+                    log_cb=lambda m: root.after(0, log, m),
+                )
                 root.after(0, log, f"🎉 輸出：{result}", SUCCESS)
             except Exception as e:
                 root.after(0, log, f"❌ {e}", ERROR)
@@ -266,9 +228,12 @@ def run_gui():
 
         threading.Thread(target=worker, daemon=True).start()
 
-    btn = tk.Button(root, text="開始修復", font=("Microsoft JhengHei UI", 11, "bold"),
-                    bg=ACCENT, fg="#0f0f0f", activebackground="#f5d96b", activeforeground="#0f0f0f",
-                    relief="flat", bd=0, cursor="hand2", padx=0, pady=10, command=do_fix)
+    btn = tk.Button(root, text="開始修復",
+                    font=("Microsoft JhengHei UI", 11, "bold"),
+                    bg=ACCENT, fg="#0f0f0f",
+                    activebackground="#f5d96b", activeforeground="#0f0f0f",
+                    relief="flat", bd=0, cursor="hand2",
+                    padx=0, pady=10, command=do_fix)
     btn.pack(fill="x", padx=24, pady=(12, 18))
 
     log("準備就緒，請選擇或拖曳 PDF 檔案。")
