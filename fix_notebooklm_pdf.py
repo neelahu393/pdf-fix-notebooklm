@@ -124,7 +124,7 @@ def run_gui():
     ERROR   = "#f87171"
 
     selected_file = tk.StringVar()
-    dpi_var = tk.IntVar(value=200)
+    dpi_var = tk.IntVar(value=400)
 
     header = tk.Frame(root, bg=BG)
     header.pack(fill="x", padx=24, pady=(22, 0))
@@ -169,7 +169,7 @@ def run_gui():
     opt_frame = tk.Frame(root, bg=BG)
     opt_frame.pack(fill="x", padx=24)
     tk.Label(opt_frame, text="輸出解析度", font=FONT_LABEL, bg=BG, fg=MUTED).pack(side="left")
-    for label, val in [("200 DPI（簡報用）", 200), ("300 DPI（高清列印）", 300)]:
+    for label, val in [("300 DPI（一般用）", 300), ("400 DPI（高清／手機）", 400)]:
         tk.Radiobutton(opt_frame, text=label, variable=dpi_var, value=val,
                        font=FONT_SMALL, bg=BG, fg=TEXT, selectcolor=BG,
                        activebackground=BG, activeforeground=ACCENT).pack(side="left", padx=(14,0))
@@ -244,7 +244,7 @@ def main():
     if len(sys.argv) >= 2:
         input_file  = sys.argv[1]
         output_file = sys.argv[2] if len(sys.argv) > 2 else None
-        dpi_val     = int(sys.argv[3]) if len(sys.argv) > 3 else 200
+        dpi_val     = int(sys.argv[3]) if len(sys.argv) > 3 else 400
         try:
             result = fix_pdf(input_file, output_file, dpi_val)
             print(f"\n🎉 修復完成：{result}")
